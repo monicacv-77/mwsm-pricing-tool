@@ -1,16 +1,17 @@
 const { google } = require("googleapis");
 
-const SHEET_ID = process.env.REACT_APP_GOOGLE_SHEET_ID;
-
-function getAuth() {
-  const privateKey = process.env.REACT_APP_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  return new google.auth.JWT(
+function getSheets() {
+  const privateKey = (process.env.REACT_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const auth = new google.auth.JWT(
     process.env.REACT_APP_SERVICE_ACCOUNT_EMAIL,
     null,
     privateKey,
     ["https://www.googleapis.com/auth/spreadsheets"]
   );
+  return google.sheets({ version: "v4", auth });
 }
+
+const SHEET_ID = process.env.REACT_APP_GOOGLE_SHEET_ID;
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,10 +19,9 @@ module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
-
   try {
+    const sheets = getSheets();
+
     if (req.method === "GET") {
       const result = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
@@ -35,8 +35,6 @@ module.exports = async (req, res) => {
 
     if (req.method === "POST") {
       const { key, value } = req.body;
-      if (!key) return res.status(400).json({ error: "Key required" });
-
       const result = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: "Settings!A2:B10",
@@ -44,7 +42,6 @@ module.exports = async (req, res) => {
       const rows = result.data.values || [];
       const rowIndex = rows.findIndex(r => r[0] === key);
       if (rowIndex === -1) return res.status(404).json({ error: "Setting not found" });
-
       const sheetRow = rowIndex + 2;
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
@@ -52,12 +49,11 @@ module.exports = async (req, res) => {
         valueInputOption: "RAW",
         requestBody: { values: [[value]] },
       });
-
       return res.status(200).json({ success: true });
     }
 
   } catch (err) {
-    console.error("Settings API error:", err);
+    console.error("settings error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 };

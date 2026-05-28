@@ -153,14 +153,15 @@ export default function App() {
         fetch("/api/settings"),
       ]);
       const [m, pt, fi, s] = await Promise.all([mRes.json(), ptRes.json(), fiRes.json(), sRes.json()]);
-      setMetals(m);
-      setProductTypes(pt);
-      setFixedItems(fi);
-      if (s.Markup) setMarkup(s.Markup);
-      if (s.LaborRate) setLaborRate(s.LaborRate);
-      if (pt.length > 0 && !newGroup) setNewGroup(pt[0]?.name || "");
+      if (Array.isArray(m)) setMetals(m);
+      if (Array.isArray(pt)) setProductTypes(pt);
+      if (Array.isArray(fi)) setFixedItems(fi);
+      if (s && s.Markup) setMarkup(s.Markup);
+      if (s && s.LaborRate) setLaborRate(s.LaborRate);
+      if (Array.isArray(pt) && pt.length > 0 && !newGroup) setNewGroup(pt[0]?.name || "");
     } catch (e) {
-      showToast("Error loading data");
+      console.error("Load error:", e);
+      showToast("Error loading data — check API configuration");
     }
     setLoading(false);
   }, [newGroup]);

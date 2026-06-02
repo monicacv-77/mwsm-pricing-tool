@@ -107,6 +107,8 @@ export default function App() {
   const [fixedItems, setFixedItems] = useState([]);
   const [markup, setMarkup] = useState(1.20);
   const [laborRate, setLaborRate] = useState(25);
+  const [ownComplexity, setOwnComplexity] = useState("simple");
+  const OWN_RATES = { simple: 1.25, complex: 1.75 };
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("quote");
   const [toast, setToast] = useState("");
@@ -239,7 +241,9 @@ export default function App() {
     if (calcType === "own") {
       const ft = parseFloat(lenFt);
       if (isNaN(ft) || ft <= 0) return null;
-      return { price: ft * laborRate, type: "own", label: "Own Metal — Labor", desc: `${ft} LF × $${laborRate}/ft` };
+      const rate = OWN_RATES[ownComplexity];
+      const label = ownComplexity === "simple" ? "Own Metal — Simple" : "Own Metal — Complex";
+      return { price: ft * rate, type: "own", label, desc: `${ft} LF × $${rate}/ft` };
     }
     return null;
   })();
@@ -505,14 +509,21 @@ export default function App() {
                 </div>
               )}
               {calcType === "own" && (
-                <div className="g2">
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div className="field">
+                    <label className="lbl">Type</label>
+                    <div className="type-tabs">
+                      <button className={`type-tab${ownComplexity === "simple" ? " active" : ""}`} onClick={() => setOwnComplexity("simple")}>
+                        Simple — $1.25/ft
+                      </button>
+                      <button className={`type-tab${ownComplexity === "complex" ? " active" : ""}`} onClick={() => setOwnComplexity("complex")}>
+                        Complex — $1.75/ft
+                      </button>
+                    </div>
+                  </div>
                   <div className="field">
                     <label className="lbl">Linear Feet</label>
                     <input type="number" min="0" placeholder="e.g. 8" value={lenFt} onChange={e => setLenFt(e.target.value)} className="inp" />
-                  </div>
-                  <div className="field">
-                    <label className="lbl">Labor Rate ($/ft)</label>
-                    <input type="number" min="0" step="0.50" value={laborRate} onChange={e => setLaborRate(e.target.value)} className="inp" />
                   </div>
                 </div>
               )}

@@ -192,16 +192,23 @@ export default function App() {
   };
 
   // Calculation
+  // Core formula: price = (sheetCost / (sheetWidth * 120)) * SO_in * (feet * 12) * markup
+  // 120 = sheet length in inches (10 feet standard)
+  // sheetWidth = 36 (3' sheet) or 48 (4' sheet)
+  const calcPrice = (metal, soInches, lengthFeet) => {
+    const costPerSqIn = metal.sheetCost / (metal.sheetWidth * 120);
+    return costPerSqIn * soInches * (lengthFeet * 12) * markup;
+  };
+
   const calcResult = (() => {
     if (calcType === "linear") {
       const metal = metals.find(m => m.id === Number(selMetal));
       const so = parseFloat(soIn), ft = parseFloat(lenFt);
       if (!metal || isNaN(so) || isNaN(ft) || so <= 0 || ft <= 0) return null;
-      const sqIn = so * (ft * 12);
-      const raw = metal.costPerSqIn * sqIn;
+      const price = calcPrice(metal, so, ft);
       const pt = productTypes.find(p => p.id === Number(selProduct));
       return {
-        price: raw * markup, sqIn, raw, type: "linear",
+        price, type: "linear",
         label: `${pt ? pt.name + " — " : ""}${metal.name}`,
         desc: `${so}" S.O. × ${ft} LF`,
       };
@@ -210,13 +217,13 @@ export default function App() {
       const metal = metals.find(m => m.id === Number(selMetal));
       const l = parseFloat(pieceL), w = parseFloat(pieceW);
       if (!metal || isNaN(l) || isNaN(w) || l <= 0 || w <= 0) return null;
-      const sqIn = l * w;
-      const raw = metal.costPerSqIn * sqIn;
+      // Per piece: treat width as SO, length in inches converted to feet
+      const price = calcPrice(metal, w, l / 12);
       const pt = productTypes.find(p => p.id === Number(selProduct));
       return {
-        price: raw * markup, sqIn, raw, type: "piece",
+        price, type: "piece",
         label: `${pt ? pt.name + " — " : ""}${metal.name}`,
-        desc: `${l}" × ${w}" (${sqIn.toFixed(0)} sq in)`,
+        desc: `${l}" × ${w}"`,
       };
     }
     if (calcType === "fixed") {
@@ -230,14 +237,7 @@ export default function App() {
       };
     }
     if (calcType === "own") {
-      const metal = metals.find(m => m.name === "Own Metal");
-      const so = parseFloat(soIn), ft = parseFloat(lenFt);
-      const l = parseFloat(pieceL), w = parseFloat(pieceW);
-      const isPiece = selProduct && productTypes.find(p => p.id === Number(selProduct))?.defaultPricingMethod === "piece";
-      if (isPiece) {
-        if (isNaN(l) || isNaN(w) || l <= 0 || w <= 0) return null;
-        return { price: laborRate, type: "own", label: "Own Metal — Labor", desc: `${l}" × ${w}" — flat rate` };
-      }
+      const ft = parseFloat(lenFt);
       if (isNaN(ft) || ft <= 0) return null;
       return { price: ft * laborRate, type: "own", label: "Own Metal — Labor", desc: `${ft} LF × $${laborRate}/ft` };
     }
@@ -257,7 +257,7 @@ export default function App() {
   }
 
   const quoteTotal = lines.reduce((s, l) => s + l.price, 0);
-  const markupPct = ((markup - 1) * 100).toFixed(1);
+  const markupPct = (markup).toFixed(2);
 
   async function saveMarkup(val) {
     setSavingMarkup(true);
@@ -284,13 +284,15 @@ export default function App() {
       });
       const data = await res.json();
       setMetals(prev => prev.map(m => m.id === id
-        ? { ...m, sheetCost: cost, costPerSqIn: data.costPerSqIn, dateUpdated: data.dateUpdated }
+        ? { ...m, sheetCost: cost, dateUpdated: data.dateUpdated }
         : m));
       setEditId(null);
       showToast("Price updated");
     } catch { showToast("Error updating price"); }
     setSaving(false);
   }
+
+  const [newWidth, setNewWidth] = useState("48");
 
   async function handleAddMetal() {
     const cost = parseFloat(newCost);
@@ -301,12 +303,12 @@ export default function App() {
       const res = await fetch("/api/metals", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), group, sheetCost: cost }),
+        body: JSON.stringify({ name: newName.trim(), group, sheetCost: cost, sheetWidth: parseInt(newWidth) }),
       });
       const data = await res.json();
       setMetals(prev => [...prev, {
         id: data.id, name: newName.trim(), group,
-        sheetCost: cost, costPerSqIn: data.costPerSqIn, dateUpdated: data.dateUpdated,
+        sheetCost: cost, sheetWidth: parseInt(newWidth), dateUpdated: data.dateUpdated,
       }]);
       setNewName(""); setNewCost(""); setAddMsg("✓ Added.");
       setTimeout(() => setAddMsg(""), 2000);
@@ -395,9 +397,9 @@ export default function App() {
           onBlur={e => saveMarkup(parseFloat(e.target.value) || 1)}
           className="settings-input"
         />
-        <span className="settings-pct">+{markupPct}%</span>
+        <span className="settings-pct">×{markupPct}</span>
         {savingMarkup && <span className="spinner" />}
-        <span className="settings-hint">Changes save automatically · Adjust as costs change</span>
+        <span className="settings-hint">Current default: ~2.68 · Adjust as costs change</span>
       </div>
 
       {/* Tabs */}
@@ -531,7 +533,7 @@ export default function App() {
                   <div className="calc-detail">
                     {calcResult.sqIn && <div>{calcResult.sqIn.toFixed(0)} sq in</div>}
                     {calcResult.raw && <div>Material: {fmt(calcResult.raw)}</div>}
-                    {calcType !== "fixed" && calcType !== "own" && <div>Markup: +{markupPct}%</div>}
+                    {calcType !== "fixed" && calcType !== "own" && <div>Markup: ×{markupPct}</div>}
                   </div>
                 </div>
               )}
@@ -608,7 +610,7 @@ export default function App() {
                     <div className="print-meta">
                       {customer && <div><div className="print-meta-lbl">Customer / Job</div><div className="print-meta-val">{customer}</div></div>}
                       <div><div className="print-meta-lbl">Items</div><div className="print-meta-val">{lines.length}</div></div>
-                      <div><div className="print-meta-lbl">Markup</div><div className="print-meta-val">+{markupPct}%</div></div>
+                      <div><div className="print-meta-lbl">Markup</div><div className="print-meta-val">×{markupPct}</div></div>
                     </div>
                     <table className="pt">
                       <thead><tr><th>#</th><th>Description</th><th>Details</th><th style={{textAlign:"right"}}>Price</th></tr></thead>
@@ -655,10 +657,21 @@ export default function App() {
                     <option value="__custom__">+ New group…</option>
                   </select>
                 </div>
-                <div className="field">
-                  <label className="lbl">Sheet Cost ($)</label>
-                  <input type="number" min="0" step="0.01" placeholder="e.g. 77.00" value={newCost} onChange={e => setNewCost(e.target.value)} className="inp" />
-                  <div style={{ fontSize:11,color:"var(--mut)",marginTop:4 }}>Full sheet price — cost/sq in auto-calculated</div>
+                <div className="g2">
+                  <div className="field">
+                    <label className="lbl">Sheet Cost ($)</label>
+                    <input type="number" min="0" step="0.01" placeholder="e.g. 35.00" value={newCost} onChange={e => setNewCost(e.target.value)} className="inp" />
+                    <div style={{fontSize:11,color:"var(--mut)",marginTop:4}}>What Paul pays per sheet</div>
+                  </div>
+                  <div className="field">
+                    <label className="lbl">Sheet Width</label>
+                    <select value={newWidth} onChange={e => setNewWidth(e.target.value)} className="inp">
+                      <option value="48">4' wide (48")</option>
+                      <option value="36">3' wide (36")</option>
+                      <option value="60">5' wide (60")</option>
+                    </select>
+                    <div style={{fontSize:11,color:"var(--mut)",marginTop:4}}>All sheets are 10' long</div>
+                  </div>
                 </div>
               </div>
               {newGroup === "__custom__" && (
@@ -691,14 +704,15 @@ export default function App() {
                       </div>
                       {editId === m.id ? (<>
                         <input type="number" step="0.01" value={editCost} onChange={e => setEditCost(e.target.value)}
-                          className="inp" style={{ width:110,padding:"4px 8px",fontSize:12 }} />
+                          className="inp" style={{ width:100,padding:"4px 8px",fontSize:12 }} />
                         <span style={{ fontSize:10,color:"var(--mut)" }}>$/sheet</span>
                         <button className="btn btn-primary btn-sm" onClick={() => handleUpdateMetal(m.id)} disabled={saving}>
                           {saving ? <span className="spinner" /> : "Save"}
                         </button>
                         <button className="btn btn-outline btn-sm" onClick={() => setEditId(null)}>✕</button>
                       </>) : (<>
-                        <div className="metal-row-cost">${(m.sheetCost || 0).toFixed(2)}/sheet</div>
+                        <div style={{fontSize:11,color:"var(--mut)",width:50}}>{m.sheetWidth === 36 ? "3' sheet" : m.sheetWidth === 60 ? "5' sheet" : "4' sheet"}</div>
+                        <div className="metal-row-cost">${(m.sheetCost || 0).toFixed(2)}</div>
                         <div className={`metal-row-date ${isStale(m.dateUpdated) ? "stale" : "date-fresh"}`}>{dateDisplay(m.dateUpdated)}</div>
                         <button className="btn btn-outline btn-sm" onClick={() => { setEditId(m.id); setEditCost((m.sheetCost||0).toFixed(2)); }}>Update Price</button>
                         <button className="btn btn-danger btn-sm" onClick={() => handleDeleteMetal(m.id)}>✕</button>

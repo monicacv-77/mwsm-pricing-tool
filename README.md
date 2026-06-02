@@ -1,16 +1,20 @@
-# MWSM Pricing Tool
-
-Standalone materials pricing calculator for Montie Wayne Sheet Metal.
-Built with React, deployed on Vercel, data stored in Google Sheets.
-
-## Setup
-
-1. Clone repo
-2. Set environment variables in Vercel (see .env.example)
-3. Deploy
-
-## Environment Variables
-
-- REACT_APP_GOOGLE_SHEET_ID
-- REACT_APP_SERVICE_ACCOUNT_EMAIL  
-- REACT_APP_PRIVATE_KEY
+{
+  "name": "mwsm-pricing-tool",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "googleapis": "^105.0.0",
+    "google-auth-library": "^8.0.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version"]
+  }
+}

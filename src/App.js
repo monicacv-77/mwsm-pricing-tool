@@ -193,13 +193,16 @@ export default function App() {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
-  // Calculation
-  // Core formula: price = (sheetCost / (sheetWidth * 120)) * SO_in * (feet * 12) * markup
-  // 120 = sheet length in inches (10 feet standard)
-  // sheetWidth = 36 (3' sheet) or 48 (4' sheet)
+  // Core formula:
+  // 1. Cost per 1" SO per 10' piece = sheetCost / sheetWidth
+  // 2. Cost per 10' piece at SO inches = (sheetCost / sheetWidth) * SO
+  // 3. Number of 10' pieces needed = ceil(lengthFeet / 10)  — no leftover reuse
+  // 4. Total price = cost_per_piece * num_pieces * markup
   const calcPrice = (metal, soInches, lengthFeet) => {
-    const costPerSqIn = metal.sheetCost / (metal.sheetWidth * 120);
-    return costPerSqIn * soInches * (lengthFeet * 12) * markup;
+    const costPer1InSO = metal.sheetCost / metal.sheetWidth;      // cost per 1" SO per 10' piece
+    const costPerPiece = costPer1InSO * soInches;                  // cost per 10' piece at this SO
+    const numPieces = Math.ceil(lengthFeet / 10);                  // no reuse of leftover pieces
+    return costPerPiece * numPieces * markup;
   };
 
   const calcResult = (() => {
@@ -207,20 +210,23 @@ export default function App() {
       const metal = metals.find(m => m.id === Number(selMetal));
       const so = parseFloat(soIn), ft = parseFloat(lenFt);
       if (!metal || isNaN(so) || isNaN(ft) || so <= 0 || ft <= 0) return null;
-      const price = calcPrice(metal, so, ft);
+      const numPieces = Math.ceil(ft / 10);
+      const costPerPiece = (metal.sheetCost / metal.sheetWidth) * so;
+      const price = costPerPiece * numPieces * markup;
       const pt = productTypes.find(p => p.id === Number(selProduct));
       return {
         price, type: "linear",
         label: `${pt ? pt.name + " — " : ""}${metal.name}`,
-        desc: `${so}" S.O. × ${ft} LF`,
+        desc: `${so}" S.O. × ${ft} LF (${numPieces} × 10' pieces)`,
       };
     }
     if (calcType === "piece") {
       const metal = metals.find(m => m.id === Number(selMetal));
       const l = parseFloat(pieceL), w = parseFloat(pieceW);
       if (!metal || isNaN(l) || isNaN(w) || l <= 0 || w <= 0) return null;
-      // Per piece: treat width as SO, length in inches converted to feet
-      const price = calcPrice(metal, w, l / 12);
+      // Per piece: width is SO, length in inches → convert to feet → ceil to nearest 10'
+      const lengthFt = l / 12;
+      const price = calcPrice(metal, w, lengthFt);
       const pt = productTypes.find(p => p.id === Number(selProduct));
       return {
         price, type: "piece",

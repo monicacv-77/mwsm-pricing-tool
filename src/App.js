@@ -114,6 +114,14 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [savingMarkup, setSavingMarkup] = useState(false);
 
+  // QuickBooks
+  const [qbConnected, setQbConnected] = useState(false);
+  const [qbCustomers, setQbCustomers] = useState([]);
+  const [qbCustomerSearch, setQbCustomerSearch] = useState("");
+  const [qbSelectedCustomer, setQbSelectedCustomer] = useState(null);
+  const [qbSearching, setQbSearching] = useState(false);
+  const [qbSending, setQbSending] = useState(false);
+
   // Calculator
   const [calcType, setCalcType] = useState("linear");
   const [selMetal, setSelMetal] = useState("");
@@ -143,6 +151,67 @@ export default function App() {
   const [saving, setSaving] = useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+
+  // Check QB connection status on load + handle callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("qb") === "connected") {
+      showToast("✓ QuickBooks connected successfully!");
+      window.history.replaceState({}, "", "/");
+    }
+    fetch("/api/qb-auth?action=status")
+      .then(r => r.json())
+      .then(d => setQbConnected(d.connected))
+      .catch(() => {});
+  }, []);
+
+  // QB customer search with debounce
+  useEffect(() => {
+    if (!qbCustomerSearch || qbCustomerSearch.length < 2) { setQbCustomers([]); return; }
+    const timer = setTimeout(async () => {
+      setQbSearching(true);
+      try {
+        const res = await fetch(`/api/qb-customers?search=${encodeURIComponent(qbCustomerSearch)}`);
+        const data = await res.json();
+        setQbCustomers(Array.isArray(data) ? data : []);
+      } catch { setQbCustomers([]); }
+      setQbSearching(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [qbCustomerSearch]);
+
+  async function connectToQB() {
+    try {
+      const res = await fetch("/api/qb-auth?action=connect");
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch { showToast("Error connecting to QuickBooks"); }
+  }
+
+  async function sendToQB() {
+    if (!qbSelectedCustomer) { showToast("Please select a QuickBooks customer first"); return; }
+    if (!lines.length) { showToast("No line items to send"); return; }
+    setQbSending(true);
+    try {
+      const res = await fetch("/api/qb-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: qbSelectedCustomer.id,
+          customerName: qbSelectedCustomer.name,
+          lines: lines.map(l => ({ desc: l.label + " — " + l.desc, price: l.price })),
+          total: quoteTotal,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✓ Draft invoice #${data.invoiceNum || data.invoiceId} created in QuickBooks!`);
+      } else {
+        showToast("QB error: " + (data.error || "Unknown error"));
+      }
+    } catch (err) { showToast("Error sending to QuickBooks"); }
+    setQbSending(false);
+  }
 
   // Load all data
   const loadData = useCallback(async () => {
@@ -394,6 +463,10 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {qbConnected
+            ? <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>QB ✓</span>
+            : <button className="btn btn-sm" style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "none" }} onClick={connectToQB}>Connect QB</button>
+          }
           <button className="btn btn-sm" style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "none" }} onClick={loadData}>↺ Refresh</button>
         </div>
       </div>
@@ -603,8 +676,60 @@ export default function App() {
                   <span className="qt-label">Total</span>
                   <span className="qt-price">{fmt(quoteTotal)}</span>
                 </div>
+
+                {/* QuickBooks section */}
+                <div style={{ marginTop: 16, padding: 16, background: "var(--surf2)", borderRadius: 8, border: "1px solid var(--bdr)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 13, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--mut)" }}>
+                      Send to QuickBooks
+                    </div>
+                    {qbConnected
+                      ? <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>✓ Connected</span>
+                      : <button className="btn btn-outline btn-sm" onClick={connectToQB}>Connect QB</button>
+                    }
+                  </div>
+                  {qbConnected && (<>
+                    <div className="field" style={{ marginBottom: 10, position: "relative" }}>
+                      <label className="lbl">Search QuickBooks Customer</label>
+                      <input
+                        className="inp"
+                        placeholder="Type customer name..."
+                        value={qbCustomerSearch}
+                        onChange={e => { setQbCustomerSearch(e.target.value); setQbSelectedCustomer(null); }}
+                      />
+                      {qbSearching && <div style={{ fontSize: 11, color: "var(--mut)", marginTop: 4 }}>Searching...</div>}
+                      {qbCustomers.length > 0 && !qbSelectedCustomer && (
+                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "white", border: "1px solid var(--bdr)", borderRadius: 7, boxShadow: "var(--shadow)", zIndex: 100, maxHeight: 200, overflowY: "auto" }}>
+                          {qbCustomers.map(c => (
+                            <div key={c.id}
+                              onClick={() => { setQbSelectedCustomer(c); setQbCustomerSearch(c.name); setQbCustomers([]); }}
+                              style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid var(--bdr)" }}
+                              onMouseEnter={e => e.target.style.background = "var(--surf2)"}
+                              onMouseLeave={e => e.target.style.background = "white"}
+                            >
+                              {c.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {qbSelectedCustomer && (
+                      <div style={{ fontSize: 12, color: "var(--green)", marginBottom: 10, fontWeight: 600 }}>
+                        ✓ {qbSelectedCustomer.name} selected
+                      </div>
+                    )}
+                    <button
+                      className="btn btn-primary btn-full"
+                      onClick={sendToQB}
+                      disabled={qbSending || !qbSelectedCustomer}
+                    >
+                      {qbSending ? "Creating Draft Invoice..." : "Create Draft Invoice in QuickBooks →"}
+                    </button>
+                  </>)}
+                </div>
+
                 <div style={{ display: "flex", gap: 10, marginTop: 14 }} className="no-print">
-                  <button className="btn btn-primary" onClick={() => setShowPrint(!showPrint)}>{showPrint ? "Hide" : "Print / Export"}</button>
+                  <button className="btn btn-outline" onClick={() => setShowPrint(!showPrint)}>{showPrint ? "Hide" : "Print / Export"}</button>
                   <button className="btn btn-outline" onClick={() => {
                     const rows = [["#","Description","Details","Price"],...lines.map((l,i)=>[i+1,l.label,l.desc,l.price.toFixed(2)]),["","","TOTAL",quoteTotal.toFixed(2)]];
                     const csv = rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\n");

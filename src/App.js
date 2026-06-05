@@ -293,14 +293,15 @@ export default function App() {
       const metal = metals.find(m => m.id === Number(selMetal));
       const l = parseFloat(pieceL), w = parseFloat(pieceW);
       if (!metal || isNaN(l) || isNaN(w) || l <= 0 || w <= 0) return null;
-      // Per piece: width is SO, length in inches → convert to feet → ceil to nearest 10'
-      const lengthFt = l / 12;
-      const price = calcPrice(metal, w, lengthFt);
+      // Per piece: area-based — cost per sq inch × piece area × markup
+      // No 10-foot strip logic here — flat cuts are priced by actual area used
+      const costPerSqIn = metal.sheetCost / (metal.sheetWidth * 120);
+      const price = costPerSqIn * l * w * markup;
       const pt = productTypes.find(p => p.id === Number(selProduct));
       return {
         price, type: "piece",
         label: `${pt ? pt.name + " — " : ""}${metal.name}`,
-        desc: `${l}" × ${w}"`,
+        desc: `${l}" × ${w}" flat cut`,
       };
     }
     if (calcType === "fixed") {
@@ -684,7 +685,16 @@ export default function App() {
                       Send to QuickBooks
                     </div>
                     {qbConnected
-                      ? <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>✓ Connected</span>
+                      ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>✓ Connected</span>
+                          <button className="btn btn-danger btn-sm" onClick={async () => {
+                            await fetch("/api/qb-auth?action=disconnect");
+                            setQbConnected(false);
+                            setQbSelectedCustomer(null);
+                            setQbCustomerSearch("");
+                            showToast("QuickBooks disconnected");
+                          }}>Disconnect</button>
+                        </div>
                       : <button className="btn btn-outline btn-sm" onClick={connectToQB}>Connect QB</button>
                     }
                   </div>
